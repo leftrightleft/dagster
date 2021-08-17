@@ -148,6 +148,17 @@ def construct_log_string(
     )
 
 
+class PythonLogCaptureHandler(logging.Handler):
+    def __init__(self, level: int, log_manager: DagsterLogManager):
+        self._log_manager = log_manager
+        super().__init__(level=level)
+
+    def emit(self, record: logging.LogRecord):
+        dagster_record = self._log_manager.convert_record(record)
+        for handler in self._log_manager.handlers:
+            handler.handle(dagster_record)
+
+
 class DagsterLogManager(logging.Logger):
     def __init__(self, logging_metadata: DagsterLoggingMetadata, loggers: List[logging.Logger]):
         self._logging_metadata = check.inst_param(
@@ -164,6 +175,11 @@ class DagsterLogManager(logging.Logger):
     def loggers(self) -> List[logging.Logger]:
         return self._loggers
 
+    def begin_capture(self):
+        # for now, automatically (and only) attach to root logger
+        root_logger = logging.getLogger()
+        root_logger.addHandler()
+
     def log_dagster_event(self, level: int, msg: str, dagster_event: "DagsterEvent"):
         self.log(level=level, msg=msg, extra={DAGSTER_META_KEY: dagster_event})
 
@@ -171,20 +187,7 @@ class DagsterLogManager(logging.Logger):
         # allow for string level names
         super().log(coerce_valid_log_level(level), msg, *args, **kwargs)
 
-    def _log(
-        self, level, msg, args, exc_info=None, extra=None, stack_info=False
-    ):  # pylint: disable=arguments-differ
-
-        # we stash dagster meta information in the extra field
-        extra = extra or {}
-
-        dagster_message_props = DagsterMessageProps(
-            orig_message=msg, dagster_event=extra.get(DAGSTER_META_KEY)
-        )
-
-        # convert the message to our preferred format
-        msg = construct_log_string(self.logging_metadata, dagster_message_props)
-
+    def _get_dagster_meta_dict(self, dagster_message_props: DagsterMessageProps) -> Dict[str, Any]:
         # combine all dagster meta information into a single dictionary
         meta_dict = {
             **self.logging_metadata._asdict(),
@@ -195,10 +198,44 @@ class DagsterLogManager(logging.Logger):
         if meta_dict["step_key"] is None:
             meta_dict["step_key"] = dagster_message_props.step_key
 
+        return meta_dict
+
+    def convert_record(self, record: logging.LogRecord) -> logging.LogRecord:
+        """
+        Converts an arbitrary logging record into a Dagster record by updating the log string and
+        adding in a dictionary of meta information.
+        """
+
+        dagster_message_props = DagsterMessageProps(orig_message=record.msg)
+
+        # add in dagster meta info to the record
+        setattr(record, DAGSTER_META_KEY, self._get_dagster_meta_dict(dagster_message_props))
+
+        # update the message to be formatted like other dagster logs
+        record.msg = construct_log_string(self.logging_metadata, dagster_message_props)
+
+        return record
+
+    def _log(
+        self, level, msg, args, exc_info=None, extra=None, stack_info=False
+    ):  # pylint: disable=arguments-differ
+
+        # log_dagster_event() puts the DagsterEvent in the extra field
+        dagster_message_props = DagsterMessageProps(
+            orig_message=msg, dagster_event=extra.get(DAGSTER_META_KEY)
+        )
+
+        # we stash dagster meta information in the extra field
+        extra = extra or {}
+        extra[DAGSTER_META_KEY] = self._get_dagster_meta_dict(dagster_message_props)
+
+        # convert the message to our preferred format
+        msg = construct_log_string(self.logging_metadata, dagster_message_props)
+
         extra[DAGSTER_META_KEY] = meta_dict
 
         for logger in self._loggers:
-            logger.log(level, msg, *args, extra=extra)
+            logger.log(level, msg, *args, exc_info=exc_info, extra=extra, stack_info=stack_info)
 
     def with_tags(self, **new_tags):
         """Add new tags in "new_tags" to the set of tags attached to this log manager instance, and
