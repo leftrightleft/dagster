@@ -26,7 +26,7 @@ def dagster():
             trigger_step(
                 pipeline="internal",
                 async_step=os.getenv("BUILDKITE_BRANCH", "master") == "master",
-                if_condition="build.branch=='master' && build.creator.email =~ /elementl.com$$/",
+                if_condition="build.creator.email =~ /elementl.com$$/",
             ),
         ]
 
