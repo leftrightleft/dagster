@@ -56,16 +56,37 @@ jobs:
     - name: Autobuild
       uses: github/codeql-action/autobuild@v1
 
-    # ℹ️ Command-line programs to run using the OS shell.
-    # 📚 https://git.io/JvXDl
-
-    # ✏️ If the Autobuild fails above, remove it and uncomment the following three lines
-    #    and modify them (or add more) to build your code if your project
-    #    uses a compiled language
-
-    #- run: |
-    #   make bootstrap
-    #   make release
-
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v1
+      with:
+        output: code-scanning-results
+
+    - name: Upload SARIF as an Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: sarif
+        path: code-scanning-results
+        retention-days: 7
+        
+    - name: Zip CodeQL database
+      id: codeql-database-bundle
+      env:
+        LANGUAGE: ${{ matrix.language }}
+      run: |
+        set -xu
+        CODEQL_DATABASE="/home/runner/work/_temp/codeql_databases/$LANGUAGE"
+        
+        CODEQL_DATABASE_ZIP="codeql-database-$LANGUAGE.zip"
+        zip -r "$CODEQL_DATABASE_ZIP" "$CODEQL_DATABASE"
+
+        echo "::set-output name=zip::$CODEQL_DATABASE_ZIP"
+
+    - name: Upload CodeQL database
+      uses: actions/upload-artifact@v2
+      with:
+        name: ${{ matrix.language }}-db
+        path: ${{ steps.codeql-database-bundle.outputs.zip }}
+
+
+        
+
