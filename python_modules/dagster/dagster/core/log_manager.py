@@ -183,7 +183,6 @@ class PythonLogCaptureHandler(logging.Handler):
 
 class DagsterLogManager(logging.Logger):
     def __init__(self, logging_metadata: DagsterLoggingMetadata, loggers: List[logging.Logger]):
-        import sys
 
         self._logging_metadata = check.inst_param(
             logging_metadata, "logging_metadata", DagsterLoggingMetadata
@@ -193,7 +192,6 @@ class DagsterLogManager(logging.Logger):
             level=logging.CRITICAL, log_manager=self
         )
         super().__init__(name="dagster", level=logging.DEBUG)
-        self.addHandler(logging.StreamHandler(sys.stdout))
 
     @property
     def logging_metadata(self) -> DagsterLoggingMetadata:
