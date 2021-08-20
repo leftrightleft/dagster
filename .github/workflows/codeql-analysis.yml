@@ -20,11 +20,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'javascript', 'python' ]
+        language: 
+          - 'python'
+        path: 
+#           - 'integration_tests'
+          - 'python_modules'
+          - 'scripts'
+          - 'scripts python_modules'
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
+
+    - name: Sparse checkout
+      run: |
+        git sparse-checkout init --cone
+        git sparse-checkout set ${{ matrix.path }}
+        ls -l
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v1
@@ -38,6 +50,7 @@ jobs:
       uses: github/codeql-action/analyze@v1
       with:
         output: code-scanning-results
+        category: 'test-category-${{ matrix.path }}'
 
     - name: Upload SARIF as an Artifact
       uses: actions/upload-artifact@v2
